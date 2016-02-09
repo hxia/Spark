@@ -355,7 +355,7 @@ sub startSpark(){
 
 sub deleteScalaFile(){
 	my $scalaFile = $_[0];
-	unlink $scalaFile.scala;
+	unlink "$scalaFile.scala";
 }
 
 
