@@ -54,7 +54,7 @@ sub main(){
 	&loadFile2HDFS($inputfile);
 	&startSpark($tableName);
 	&deleteHDFSFile($inputfile);
-	&deleteScalaFiel($tableName);
+	&deleteScalaFile($tableName);
 }
 
 
