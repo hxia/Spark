@@ -222,7 +222,7 @@ COMMENT
 	if($fieldSeperator =~ /\t/){
 	   # handle tab delimited files
 	   # print OUT "val $rdd = sc.textFile(\"$hdfsFile\").map(r => r + \",NULL\").map(csv2Tsv(_, \"\\t\"))\n";
-	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\").map(_.split(\"\\t\"))\n\n";
+	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\")\n\n";
 	}elsif($fieldSeperator =~ /\\/){
 	   # handle the field delimiter need escaped
 	   # print OUT "val $rdd = sc.textFile(\"$hdfsFile\").map(r => r + \",NULL\").map(csv2Tsv(_, \"\\$fieldSeperator\"))\n";
