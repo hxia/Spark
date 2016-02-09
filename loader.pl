@@ -165,7 +165,7 @@ def csv2Tsv(s0: String): String = {
 	  s.replaceAll(",", "\\t")
     }
 
-    line + "\tNULL"
+    line + "\\tNULL"
 }
 
 LINE
