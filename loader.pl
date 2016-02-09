@@ -8,6 +8,11 @@ sub main(){
 	
 	# *********************************************
 	#  define the field seperator used in sourcce
+	#
+	# the folowing delimiter are fully tested:
+	#	1. ","
+	#   2. "\t"
+	#   3. "~"
 	#  ********************************************
 	#my $fieldSeperator = "\\\|";
 	my $fieldSeperator = "~";
