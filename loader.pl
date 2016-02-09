@@ -10,8 +10,8 @@ sub main(){
 	#  define the field seperator used in sourcce
 	#  ********************************************
 	#my $fieldSeperator = "\\\|";
-	#my $fieldSeperator = "~";
-	my $fieldSeperator = "\t";
+	my $fieldSeperator = "~";
+	#my $fieldSeperator = "\t";
 	#my $fieldSeperator = ",";
 	print "Field Seperator: $fieldSeperator \n";
 
@@ -73,7 +73,7 @@ sub selectLineParser(){
    } elsif($fieldSeperator =~ /\\/){
       return "";
    } else {
-      return  "";
+      return  &getDelimited2Tsv($fieldSeperator);
    }
 }
 
@@ -143,19 +143,21 @@ LINE
 # ************************************************************************************
 
 sub getDelimited2Tsv(){
-
-  my $lineParser = <<LINE;
+	my $fieldDelimiter =$_[0];
+	
+    my $cmd = <<LINE;
   
 // ********************************************************************
 //  replace TAB to whitespace and then convert delimited to TSV format 
 // ********************************************************************
 
-def csv2Tsv(s: String, fieldDelimiter: String): String = {    
-      s.replaceAll(" ", "\t").replaceAll("\t", fieldDelimiter)
+def delimited2Tsv(s: String, fieldDelimiter: String): String = {    
+      s.replaceAll("\\t", " ").replaceAll(\"$fieldDelimiter\", "\\t")
 }
 
 LINE
 
+	return $cmd;
 }
 
 
@@ -195,7 +197,7 @@ COMMENT
 	   # handle CSV format files
 	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\").map(csv2Tsv(_))\n\n";
 	} else {
-	   print "Unsupported format .... \n";
+	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\").map(delimited2Tsv(_, \"\\$fieldSeperator\"))\n\n";
 	}
 
 	return $cmd;
