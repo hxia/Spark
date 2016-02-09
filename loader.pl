@@ -216,9 +216,11 @@ COMMENT
 sub getHeaderLine(){
    my $headerLine = $_[0];
    my $fieldSeperator = $_[1];
-	
+
+   # file header line shouldn't have space
    $headerLine =~ s/\r//g;
    $headerLine =~ s/\n//g;   
+   $headerLine =~ s/"//g;   
    #print "Header:   $headerLine\n";
    #print "Field Seperator: $fieldSeperator \n";
 
