@@ -394,6 +394,6 @@ sub deleteHDFSFile(){
     my $inputfile = $_[0];
 	my $cmd = "hdfs dfs -rm /user/$inputfile";
 	print "Command = $cmd \n";
-	system($cmd2);
+	system($cmd);
 }
 
