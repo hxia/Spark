@@ -11,8 +11,8 @@ sub main(){
 	#  ********************************************
 	#my $fieldSeperator = "\\\|";
 	#my $fieldSeperator = "~";
-	#my $fieldSeperator = "\t";
-	my $fieldSeperator = ",";
+	my $fieldSeperator = "\t";
+	#my $fieldSeperator = ",";
 	print "Field Seperator: $fieldSeperator \n";
 
 	# *********************************************
@@ -316,7 +316,7 @@ sub transformRDD(){
 	
 MSG
 
-	$cmd .= "val rowRDD = $rdd.filter(_.indexOf(\"$header[0]\") < 0).map(_.split(\"\\t\")). \n";
+	$cmd .= "val rowRDD = $rdd.filter(_.indexOf(\"$header[0]\") < 0).map(r => r + \"\\tNULL\").map(_.split(\"\\t\")). \n";
 	$cmd .= "      map(p => Row ( \n";
 
 	my $n = @header;
