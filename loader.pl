@@ -32,27 +32,35 @@ sub main(){
 	$tableName =~ s/\.dat//;
 	print "Table Name: $tableName \n";
 
-
-	open(IN, "$inputfile") || die "$! \n";
-
-
+	
+	# *************************************************************
+	# create Scala file for Spark to run
+ 	# *************************************************************
+	
 	open(OUT, ">$tableName.scala") || die "$! \n";
-
 	print OUT &getHeader();
 	print OUT &selectLineParser($fieldSeperator);
 	print OUT &createRDD($inputfile, $tableName, $fieldSeperator);
 	print OUT &getSchema(@header);
 	print OUT &transformRDD($tableName, @header);
 	print OUT &convertRDD2Impala($tableName, $databaseName);
-
+	close(OUT);
+	
+	
+	# *************************************************************
+	#  preparation and cleanup
+ 	# *************************************************************
+	
 	&loadFile2HDFS($inputfile);
 	&startSpark($tableName);
 	&deleteHDFSFile($inputfile);
+	&deleteScalaFiel($tableName);
 }
 
 
 # ************************************************************************************
-#  selectLineParser: generate a correct parser to parse input file's each line
+#  selectLineParser: generate a correct parser to parse input file's each line,
+#                    currently support CSV and TSV format
 # ************************************************************************************
 
 sub selectLineParser(){
@@ -88,49 +96,6 @@ import hc.implicits._
 HEADER
 
    return $header;
-}
-
-
-
-# ************************************************************************************
-#  parseCSVLine: parse a line for CSV file
-# ************************************************************************************
-
-sub parseCSVLine(){
-
-  my $lineParser = <<LINE;
-  
-// ********************************************************************
-//  replace TAB to whitespace and then convert CSV to TSV format 
-// ********************************************************************
-
-def csv2Tsv(s0: String, fieldDelimiter: String): String = {
-    //val s = s0.replaceAll("\\t", " ")
-    val s = s0
-
-    val line = if (s.indexOf("\\"") > -1) {
-      val n1 = s.indexOf("\\"")
-      val n2 = s.indexOf("\\"", s.indexOf("\\"") + 1)
-
-      val s1 = s.substring(0, n1)
-      val s2 = s.substring(n1 + 1, n2)
-      val s3 = s.substring(n2 + 1)
-
-      //val ss = if (s3.indexOf("\\"") > -1) s1.replaceAll(",", fieldDelimiter) + s2.replace("\\"", "") + csv2Tsv(s3, fieldDelimiter)
-      //else s1.replaceAll(",", fieldDelimiter) + s2.replace("\\"", "") + s3.replaceAll(",", fieldDelimiter)
-      val ss = if (s3.indexOf("\\"") > -1) s1 + s2.replace("\\"", "") + csv2Tsv(s3, fieldDelimiter)
-      else s1 + s2.replace("\\"", "") + s3
-
-      ss
-    } else {
-      s.replaceAll(",", fieldDelimiter)
-    }
-
-    line.toString
-}
-
-LINE
-
 }
 
 
@@ -220,18 +185,17 @@ COMMENT
 
 	# add a leading \ for escaped char
 	if($fieldSeperator =~ /\t/){
-	   # handle tab delimited files
-	   # print OUT "val $rdd = sc.textFile(\"$hdfsFile\").map(r => r + \",NULL\").map(csv2Tsv(_, \"\\t\"))\n";
+	   # handle TAB delimited files
 	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\")\n\n";
 	}elsif($fieldSeperator =~ /\\/){
 	   # handle the field delimiter need escaped
 	   # print OUT "val $rdd = sc.textFile(\"$hdfsFile\").map(r => r + \",NULL\").map(csv2Tsv(_, \"\\$fieldSeperator\"))\n";
 	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\").map(delimited2Tsv(_, \"\\$fieldSeperator\"))\n\n";
 	}elsif($fieldSeperator =~ /,/){
-	   # handle the normal field delimiter, which don't need ito be escaped
+	   # handle CSV format files
 	   $cmd .= "val $rdd = sc.textFile(\"$hdfsFile\").map(csv2Tsv(_))\n\n";
 	} else {
-	   print "Unhandled situation .... \n";
+	   print "Unsupported format .... \n";
 	}
 
 	return $cmd;
@@ -248,10 +212,9 @@ sub getHeaderLine(){
 	
    $headerLine =~ s/\r//g;
    $headerLine =~ s/\n//g;   
-   print "Header:   $headerLine\n";
-   print "Field Seperator: $fieldSeperator \n";
+   #print "Header:   $headerLine\n";
+   #print "Field Seperator: $fieldSeperator \n";
 
-   #my @header = split($fieldSeperator,  $headerLine);
    my @header = split($fieldSeperator,  $headerLine);
    my $n = @header;
    print "Num of Columns:  $n \n";
@@ -383,6 +346,16 @@ sub startSpark(){
 	my $cmd = "/usr/bin/spark-shell -i $scalaFile.scala";
 	print "Command = $cmd \n";
 	system($cmd);
+}
+
+
+# ********************************************************
+#   deleteScalaFile: delete created Scala file for Spark
+# ********************************************************
+
+sub deleteScalaFile(){
+	my $scalaFile = $_[0];
+	unlink $scalaFile.scala;
 }
 
 
