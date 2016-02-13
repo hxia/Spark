@@ -1260,7 +1260,7 @@ with rawData as
   from death_raw d1
   inner join
    (
-      select person_id, max(drug_exposure_start_date) as max_date
+      select person_id, max(cast(drug_exposure_start_date as timestamp)) as max_date
       from drug_exposure
       group by person_id
    ) t0
@@ -1370,7 +1370,7 @@ with rawData as
   from death_raw d1
    inner join
    (
-      select person_id, max(procedure_date) as max_date
+      select person_id, max(cast(procedure_date as timestamp)) as max_date
       from procedure_occurrence
       group by person_id
    ) t0
@@ -1425,7 +1425,7 @@ with rawData as
   from death_raw d1
    inner join
    (
-      select person_id, max(observation_date) as max_date
+      select person_id, max(cast(observation_date as timestamp)) as max_date
       from observation
       group by person_id
    ) t0
@@ -1520,11 +1520,11 @@ group by po1.procedure_CONCEPT_ID
 -- 602   Number of persons by procedure occurrence start month, by procedure_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 602 as analysis_id,   
-   po1.procedure_concept_id as stratum_1,
-   YEAR(procedure_date)*100 + month(procedure_date) as stratum_2, 
+   cast(po1.procedure_concept_id as string) as stratum_1,
+   cast(YEAR(cast(procedure_date as timestamp))*100 + month(cast(procedure_date as timestamp)) as string) as stratum_2, 
    count(distinct PERSON_ID) as count_value
 from procedure_occurrence po1
-group by po1.procedure_concept_id, YEAR(procedure_date)*100 + month(procedure_date)
+group by po1.procedure_concept_id, YEAR(cast(procedure_date as timestamp))*100 + month(cast(procedure_date as timestamp))
 ;
 
 
@@ -1580,17 +1580,17 @@ group by o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 -- 604   Number of persons with at least one procedure occurrence, by procedure_concept_id by calendar year by gender by age decile
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, count_value)
 select 604 as analysis_id,   
-   po1.procedure_concept_id as stratum_1,
-   YEAR(procedure_date) as stratum_2,
-   p1.gender_concept_id as stratum_3,
-   floor((year(procedure_date) - p1.year_of_birth)/10) as stratum_4, 
+   cast(po1.procedure_concept_id as string) as stratum_1,
+   cast(YEAR(cast(procedure_date as timestamp)) as string) as stratum_2,
+   cast(p1.gender_concept_id as string) as stratum_3,
+   cast(floor((year(cast(procedure_date as timestamp)) - p1.year_of_birth)/10) as string) as stratum_4, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
-	inner join procedure_occurrence po1on p 1.person_id = po1.person_id
+	inner join procedure_occurrence po1 on p1.person_id = po1.person_id
 group by po1.procedure_concept_id, 
-   YEAR(procedure_date),
+   YEAR(cast(procedure_date as timestamp)),
    p1.gender_concept_id,
-   floor((year(procedure_date) - p1.year_of_birth)/10)
+   floor((year(cast(procedure_date as timestamp)) - p1.year_of_birth)/10)
 ;
 
 
@@ -1606,19 +1606,21 @@ group by po1.procedure_CONCEPT_ID, po1.procedure_type_concept_id
 
 
 -- 606   Distribution of age by procedure_concept_id
-select po1.procedure_concept_id as subject_id,
-   p1.gender_concept_id,
-   po1.procedure_start_year - p1.year_of_birth as count_value
-from PERSON p1
-inner join
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as 
 (
-   select person_id, procedure_concept_id, min(year(procedure_date)) as procedure_start_year
-   from procedure_occurrence
-   group by person_id, procedure_concept_id
-) po1 on p1.person_id = po1.person_id
-;
-
-with overallStats as
+	select po1.procedure_concept_id as subject_id,
+	   p1.gender_concept_id,
+	   po1.procedure_start_year - p1.year_of_birth as count_value
+	from PERSON p1
+	inner join
+	(
+	   select person_id, procedure_concept_id, min(year(cast(procedure_date as timestamp))) as procedure_start_year
+	   from procedure_occurrence
+	   group by person_id, procedure_concept_id
+	) po1 on p1.person_id = po1.person_id
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     gender_concept_id as stratum2_id,
@@ -1627,13 +1629,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_606
+  from rawData
    group by subject_id, gender_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, gender_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, gender_concept_id order by count_value) as rn
-  from #rawData_606
+  from rawData
   group by subject_id, gender_concept_id, count_value
 ),
 priorStats as
@@ -1644,13 +1646,13 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 606 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -1659,11 +1661,6 @@ select 606 as analysis_id,
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
 ;
 
 
@@ -1684,8 +1681,8 @@ select 610 as analysis_id,
 from procedure_occurrence po1
    left join observation_period_raw op1
    on op1.person_id = po1.person_id
-   and po1.procedure_date >= op1.observation_period_start_date
-   and po1.procedure_date <= op1.observation_period_end_date
+   and cast(po1.procedure_date as timestamp) >= cast(op1.observation_period_start_date as timestamp)
+   and cast(po1.procedure_date as timestamp) <= cast(op1.observation_period_end_date as timestamp)
 where op1.person_id is null
 ;
 
@@ -1712,10 +1709,10 @@ where po1.visit_occurrence_id is not null and vo1.visit_occurrence_id is null
 -- 620   Number of procedure occurrence records by condition occurrence start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 620 as analysis_id,   
-   YEAR(procedure_date)*100 + month(procedure_date) as stratum_1, 
+   cast(YEAR(cast(procedure_date as timestamp))*100 + month(cast(procedure_date as timestamp)) as string) as stratum_1, 
    count(PERSON_ID) as count_value
 from procedure_occurrence po1
-group by YEAR(procedure_date)*100 + month(procedure_date)
+group by YEAR(cast(procedure_date as timestamp))*100 + month(cast(procedure_date as timestamp))
 ;
 
 
@@ -1747,7 +1744,7 @@ from
 -- 700   Number of persons with at least one drug occurrence, by drug_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 700 as analysis_id, 
-   de1.drug_CONCEPT_ID as stratum_1,
+   cast(de1.drug_CONCEPT_ID as string) as stratum_1,
    count(distinct de1.PERSON_ID) as count_value
 from drug_exposure de1
 group by de1.drug_CONCEPT_ID
@@ -1757,7 +1754,7 @@ group by de1.drug_CONCEPT_ID
 -- 701   Number of drug occurrence records, by drug_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 701 as analysis_id, 
-   de1.drug_CONCEPT_ID as stratum_1,
+   cast(de1.drug_CONCEPT_ID as string) as stratum_1,
    count(de1.PERSON_ID) as count_value
 from drug_exposure de1
 group by de1.drug_CONCEPT_ID
@@ -1767,12 +1764,12 @@ group by de1.drug_CONCEPT_ID
 -- 702   Number of persons by drug occurrence start month, by drug_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 702 as analysis_id,   
-   de1.drug_concept_id as stratum_1,
-   YEAR(drug_exposure_start_date)*100 + month(drug_exposure_start_date) as stratum_2, 
+   cast(de1.drug_concept_id as string) as stratum_1,
+   cast(YEAR(cast(drug_exposure_start_date as timestamp))*100 + month(cast(drug_exposure_start_date as timestamp)) as string) as stratum_2, 
    count(distinct PERSON_ID) as count_value
 from drug_exposure de1
 group by de1.drug_concept_id, 
-   YEAR(drug_exposure_start_date)*100 + month(drug_exposure_start_date)
+   YEAR(cast(drug_exposure_start_date as timestamp))*100 + month(cast(drug_exposure_start_date as timestamp))
 ;
 
 
@@ -1815,9 +1812,9 @@ priorStats as
 select 703 as analysis_id,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -1832,25 +1829,25 @@ group by o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 -- 704   Number of persons with at least one drug occurrence, by drug_concept_id by calendar year by gender by age decile
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, count_value)
 select 704 as analysis_id,   
-   de1.drug_concept_id as stratum_1,
-   YEAR(drug_exposure_start_date) as stratum_2,
-   p1.gender_concept_id as stratum_3,
-   floor((year(drug_exposure_start_date) - p1.year_of_birth)/10) as stratum_4, 
+   cast(de1.drug_concept_id as string) as stratum_1,
+   cast(YEAR(cast(drug_exposure_start_date as timestamp)) as string) as stratum_2,
+   cast(p1.gender_concept_id as string) as stratum_3,
+   cast(floor((year(cast(drug_exposure_start_date as timestamp)) - p1.year_of_birth)/10) as string) as stratum_4, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
 	inner join drug_exposure de1 on p1.person_id = de1.person_id
 group by de1.drug_concept_id, 
-   YEAR(drug_exposure_start_date),
+   YEAR(cast(drug_exposure_start_date as timestamp)),
    p1.gender_concept_id,
-   floor((year(drug_exposure_start_date) - p1.year_of_birth)/10)
+   floor((year(cast(drug_exposure_start_date as timestamp)) - p1.year_of_birth)/10)
 ;
 
 
 -- 705   Number of drug occurrence records, by drug_concept_id by drug_type_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 705 as analysis_id, 
-   de1.drug_CONCEPT_ID as stratum_1,
-   de1.drug_type_concept_id as stratum_2,
+   cast(de1.drug_CONCEPT_ID as string) as stratum_1,
+   cast(de1.drug_type_concept_id as string) as stratum_2,
    count(de1.PERSON_ID) as count_value
 from drug_exposure de1
 group by de1.drug_CONCEPT_ID, de1.drug_type_concept_id
@@ -1858,19 +1855,20 @@ group by de1.drug_CONCEPT_ID, de1.drug_type_concept_id
 
 
 -- 706   Distribution of age by drug_concept_id
-select de1.drug_concept_id as subject_id,
-  p1.gender_concept_id,
-   de1.drug_start_year - p1.year_of_birth as count_value
-from PERSON p1
-inner join
-(
-   select person_id, drug_concept_id, min(year(drug_exposure_start_date)) as drug_start_year
-   from drug_exposure
-   group by person_id, drug_concept_id
-) de1 on p1.person_id = de1.person_id
-;
-
-with overallStats as
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as(
+	select de1.drug_concept_id as subject_id,
+	  p1.gender_concept_id,
+	   de1.drug_start_year - p1.year_of_birth as count_value
+	from PERSON p1
+	inner join
+	(
+	   select person_id, drug_concept_id, min(year(cast(drug_exposure_start_date as timestamp))) as drug_start_year
+	   from drug_exposure
+	   group by person_id, drug_concept_id
+	) de1 on p1.person_id = de1.person_id
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     gender_concept_id as stratum2_id,
@@ -1879,13 +1877,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_706
+  from rawData
    group by subject_id, gender_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, gender_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, gender_concept_id order by count_value) as rn
-  from #rawData_706
+  from rawData
   group by subject_id, gender_concept_id, count_value
 ),
 priorStats as
@@ -1896,13 +1894,13 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 706 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -1911,11 +1909,6 @@ select 706 as analysis_id,
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
 ;
 
 
@@ -1934,10 +1927,10 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 710 as analysis_id,  
    count(de1.PERSON_ID) as count_value
 from drug_exposure de1
-   left join observation_period_raw op1
+   left join observation_period op1
 	   on op1.person_id = de1.person_id
-	   and de1.drug_exposure_start_date >= op1.observation_period_start_date
-	   and de1.drug_exposure_start_date <= op1.observation_period_end_date
+	   and cast(de1.drug_exposure_start_date as timestamp) >= cast(op1.observation_period_start_date as timestamp)
+	   and cast(de1.drug_exposure_start_date as timestamp) <= cast(op1.observation_period_end_date as timestamp)
 where op1.person_id is null
 ;
 
@@ -1947,7 +1940,7 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 711 as analysis_id,  
    count(de1.PERSON_ID) as count_value
 from drug_exposure de1
-where de1.drug_exposure_end_date < de1.drug_exposure_start_date
+where cast(de1.drug_exposure_end_date as string) < cast(de1.drug_exposure_start_date as string)
 ;
 
 
@@ -1976,7 +1969,7 @@ where de1.visit_occurrence_id is not null and vo1.visit_occurrence_id is null
 insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
-  select drug_concept_id,
+  select drug_concept_id as stratum_id,
       days_supply as count_value
    from drug_exposure 
    where days_supply is not null
@@ -1990,7 +1983,7 @@ overallStats as
     max(count_value) as max_value,
     count(*) as total
   from rawData
-   group by stratum_id
+  group by stratum_id
 ),
 status  as
 (
@@ -2006,12 +1999,12 @@ priorStats as
   group by s.stratum_id, s.count_value, s.total, s.rn
 )
 select 715 as analysis_id,
-  o.stratum_id,
+  cast(o.stratum_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -2027,7 +2020,7 @@ group by o.stratum_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_v
 insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
-  select drug_concept_id,
+  select drug_concept_id as stratum_id,
     refills as count_value
    from drug_exposure 
    where refills is not null
@@ -2057,7 +2050,7 @@ priorStats as
   group by s.stratum_id, s.count_value, s.total, s.rn
 )
 select 716 as analysis_id,
-  o.stratum_id,
+  cast(o.stratum_id as string),
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -2078,7 +2071,7 @@ group by o.stratum_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_v
 insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
-  select drug_concept_id, quantity as count_value
+  select drug_concept_id as stratum_id, quantity as count_value
   from drug_exposure 
    where quantity is not null
 ),
@@ -2107,7 +2100,7 @@ priorStats as
   group by s.stratum_id, s.count_value, s.total, s.rn
 )
 select 717 as analysis_id,
-  o.stratum_id,
+  cast(o.stratum_id as string),
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -2127,10 +2120,10 @@ group by o.stratum_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_v
 -- 720   Number of drug exposure records by condition occurrence start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 720 as analysis_id,   
-   YEAR(drug_exposure_start_date)*100 + month(drug_exposure_start_date) as stratum_1, 
+   cast(YEAR(cast(drug_exposure_start_date as timestamp))*100 + month(cast(drug_exposure_start_date as timestamp)) as string) as stratum_1, 
    count(PERSON_ID) as count_value
 from drug_exposure de1
-group by YEAR(drug_exposure_start_date)*100 + month(drug_exposure_start_date)
+group by YEAR(cast(drug_exposure_start_date as timestamp))*100 + month(cast(drug_exposure_start_date as timestamp))
 ;
 
 
@@ -2141,7 +2134,7 @@ ACHILLES Analyses on OBSERVATION table
 -- 800   Number of persons with at least one observation occurrence, by observation_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 800 as analysis_id, 
-   o1.observation_CONCEPT_ID as stratum_1,
+   cast(o1.observation_CONCEPT_ID as string) as stratum_1,
    count(distinct o1.PERSON_ID) as count_value
 from observation o1
 group by o1.observation_CONCEPT_ID
@@ -2151,7 +2144,7 @@ group by o1.observation_CONCEPT_ID
 -- 801   Number of observation occurrence records, by observation_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 801 as analysis_id, 
-   o1.observation_CONCEPT_ID as stratum_1,
+   cast(o1.observation_CONCEPT_ID as string) as stratum_1,
    count(o1.PERSON_ID) as count_value
 from observation o1
 group by o1.observation_CONCEPT_ID
@@ -2161,12 +2154,12 @@ group by o1.observation_CONCEPT_ID
 -- 802   Number of persons by observation occurrence start month, by observation_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 802 as analysis_id,   
-   o1.observation_concept_id as stratum_1,
-   YEAR(observation_date)*100 + month(observation_date) as stratum_2, 
+   cast(o1.observation_concept_id as string) as stratum_1,
+   cast(YEAR(cast(observation_date as timestamp))*100 + month(cast(observation_date as timestamp)) as string) as stratum_2, 
    count(distinct PERSON_ID) as count_value
 from observation o1
 group by o1.observation_concept_id, 
-   YEAR(observation_date)*100 + month(observation_date)
+   YEAR(cast(observation_date as timestamp))*100 + month(cast(observation_date as timestamp))
 ;
 
 
@@ -2195,7 +2188,7 @@ overallStats as
 status  as
 (
   select count_value, 
-     count(*) as total, 
+      count(*) as total, 
       row_number() over (order by count_value) as rn
   from rawData
   group by count_value
@@ -2210,9 +2203,9 @@ priorStats as
 select 803 as analysis_id,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -2227,25 +2220,25 @@ group by o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 -- 804   Number of persons with at least one observation occurrence, by observation_concept_id by calendar year by gender by age decile
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, count_value)
 select 804 as analysis_id,   
-   o1.observation_concept_id as stratum_1,
-   YEAR(observation_date) as stratum_2,
-   p1.gender_concept_id as stratum_3,
-   floor((year(observation_date) - p1.year_of_birth)/10) as stratum_4, 
+   cast(o1.observation_concept_id as string) as stratum_1,
+   cast(YEAR(cast(observation_date as timestamp)) as string) as stratum_2,
+   cast(p1.gender_concept_id as string) as stratum_3,
+   cast(floor((year(cast(observation_date as timestamp)) - p1.year_of_birth)/10) as string) as stratum_4, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
 	inner join observation o1 on p1.person_id = o1.person_id
 group by o1.observation_concept_id, 
-   YEAR(observation_date),
+   YEAR(cast(observation_date as timestamp)),
    p1.gender_concept_id,
-   floor((year(observation_date) - p1.year_of_birth)/10)
+   floor((year(cast(observation_date as timestamp)) - p1.year_of_birth)/10)
 ;
 
 
 -- 805   Number of observation occurrence records, by observation_concept_id by observation_type_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 805 as analysis_id, 
-   o1.observation_CONCEPT_ID as stratum_1,
-   o1.observation_type_concept_id as stratum_2,
+   cast(o1.observation_CONCEPT_ID as string) as stratum_1,
+   cast(o1.observation_type_concept_id as string) as stratum_2,
    count(o1.PERSON_ID) as count_value
 from observation o1
 group by o1.observation_CONCEPT_ID, o1.observation_type_concept_id
@@ -2253,20 +2246,22 @@ group by o1.observation_CONCEPT_ID, o1.observation_type_concept_id
 
 
 -- 806   Distribution of age by observation_concept_id
-select o1.observation_concept_id as subject_id,
-  p1.gender_concept_id,
-   o1.observation_start_year - p1.year_of_birth as count_value
-from PERSON p1
-inner join
-(
-   select person_id, observation_concept_id, min(year(observation_date)) as observation_start_year
-   from observation
-   group by person_id, observation_concept_id
-) o1
-on p1.person_id = o1.person_id
-;
-
-with overallStats as
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as 
+	(
+	select o1.observation_concept_id as subject_id,
+	  p1.gender_concept_id,
+	   o1.observation_start_year - p1.year_of_birth as count_value
+	from PERSON p1
+	inner join
+	(
+	   select person_id, observation_concept_id, min(year(cast(observation_date as timestamp))) as observation_start_year
+	   from observation
+	   group by person_id, observation_concept_id
+	) o1
+	on p1.person_id = o1.person_id
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     gender_concept_id as stratum2_id,
@@ -2275,13 +2270,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_806
+  from rawData
    group by subject_id, gender_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, gender_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, gender_concept_id order by count_value) as rn
-  from #rawData_806
+  from rawData
   group by subject_id, gender_concept_id, count_value
 ),
 priorStats as
@@ -2292,13 +2287,13 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 806 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -2309,17 +2304,12 @@ join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.strat
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 807   Number of observation occurrence records, by observation_concept_id and unit_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 807 as analysis_id, 
-   o1.observation_CONCEPT_ID as stratum_1,
-   o1.unit_concept_id as stratum_2,
+   cast(o1.observation_CONCEPT_ID as string) as stratum_1,
+   cast(o1.unit_concept_id as string) as stratum_2,
    count(o1.PERSON_ID) as count_value
 from observation o1
 group by o1.observation_CONCEPT_ID, o1.unit_concept_id
@@ -2341,10 +2331,10 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 810 as analysis_id,  
    count(o1.PERSON_ID) as count_value
 from observation o1
-   left join observation_period_raw op1
+   left join observation_period op1
    on op1.person_id = o1.person_id
-   and o1.observation_date >= op1.observation_period_start_date
-   and o1.observation_date <= op1.observation_period_end_date
+   and cast(o1.observation_date as timestamp) >= cast(op1.observation_period_start_date as timestamp)
+   and cast(o1.observation_date as timestamp) <= cast(op1.observation_period_end_date as timestamp)
 where op1.person_id is null
 ;
 
@@ -2381,14 +2371,16 @@ where o1.value_as_number is null
 
 
 -- 815  Distribution of numeric values, by observation_concept_id and unit_concept_id
-select observation_concept_id as subject_id, 
-   unit_concept_id,
-   value_as_number as count_value
-from observation o1
-where o1.unit_concept_id is not null and o1.value_as_number is not null
-;
-
-with overallStats as
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as
+(
+	select observation_concept_id as subject_id, 
+	   unit_concept_id,
+	   value_as_number as count_value
+	from observation o1
+	where o1.unit_concept_id is not null and o1.value_as_number is not null
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     unit_concept_id as stratum2_id,
@@ -2397,13 +2389,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_815
+  from rawData
    group by subject_id, unit_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
-  from #rawData_815
+  from rawData
   group by subject_id, unit_concept_id, count_value
 ),
 priorStats as
@@ -2414,13 +2406,13 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 815 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -2429,11 +2421,6 @@ select 815 as analysis_id,
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
 ;
 
 
@@ -2455,10 +2442,10 @@ from #tempResults
 -- 820   Number of observation records by condition occurrence start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 820 as analysis_id,   
-   YEAR(observation_date)*100 + month(observation_date) as stratum_1, 
+   cast(YEAR(cast(observation_date as timestamp))*100 + month(cast(observation_date as timestamp)) as string) as stratum_1, 
    count(PERSON_ID) as count_value
 from observation o1
-group by YEAR(observation_date)*100 + month(observation_date)
+group by YEAR(cast(observation_date as timestamp))*100 + month(cast(observation_date as timestamp))
 ;
 
 
@@ -2671,7 +2658,7 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 907 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -2939,7 +2926,7 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1007 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -2971,33 +2958,36 @@ where p1.person_id is null
 -- 1009   Number of condition eras outside valid observation period
 insert into ACHILLES_results (analysis_id, count_value)
 select 1009 as analysis_id,  
-   count(ce1.PERSON_ID) as count_value
-from condition_era_raw ce1
-     left join observation_period_raw op1
-	   on op1.person_id = ce1.person_id
-	   and ce1.sdate >= op1.sdate
-	   and ce1.sdate <= op1.edate
+	count(ce1.PERSON_ID) as count_value
+from
+	condition_era ce1
+	left join observation_period op1
+	on op1.person_id = ce1.person_id
+	and cast(ce1.condition_era_start_date as timestamp) >= cast(op1.observation_period_start_date as timestamp)
+	and cast(ce1.condition_era_start_date as timestamp) <= cast(op1.observation_period_end_date as timestamp)
 where op1.person_id is null
 ;
 
 
 -- 1010   Number of condition eras with end date < start date
 insert into ACHILLES_results (analysis_id, count_value)
-select 1010 as analysis_id,  
+select 1010 as analysis_id,
    count(ce1.PERSON_ID) as count_value
-from condition_era_raw ce1
-where ce1.edate < ce1.sdate
+from
+   condition_era ce1
+where cast(ce1.condition_era_end_date as timestamp) < cast(ce1.condition_era_start_date as timestamp)
 ;
 
 
 -- 1020   Number of drug era records by drug era start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
-select 1020 as analysis_id, 
-   cast(syear*100 + smonth as string) as stratum_1, 
+select 1020 as analysis_id,
+   cast(YEAR(cast(condition_era_start_date as timestamp))*100 + month(cast(condition_era_start_date as timestamp)) as string) as stratum_1,
    count(PERSON_ID) as count_value
-from condition_era_raw ce1
-group by syear*100 + smonth
+from condition_era ce1
+group by YEAR(cast(condition_era_start_date as timestamp))*100 + month(cast(condition_era_start_date as timestamp))
 ;
+
 
 
 /********************************************
@@ -3007,11 +2997,11 @@ ACHILLES Analyses on LOCATION table
 -- 1100   Number of persons by location 3-digit zip
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1100 as analysis_id,  
-   left(l1.zip,3) as stratum_1, count(distinct person_id) as count_value
+   substr(l1.zip, 1, 3) as stratum_1, count(distinct person_id) as count_value
 from PERSON p1
-   inner join LOCATION l1 on p1.location_id = l1.location_id
+   inner join `LOCATION` l1 on p1.location_id = l1.location_id
 where p1.location_id is not null and l1.zip is not null
-group by left(l1.zip,3);
+group by substr(l1.zip, 1, 3);
 
 
 -- 1101   Number of persons by location state
@@ -3019,7 +3009,7 @@ insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1101 as analysis_id,  
    l1.state as stratum_1, count(distinct person_id) as count_value
 from PERSON p1
-   inner join LOCATION l1 on p1.location_id = l1.location_id
+   inner join `LOCATION` l1 on p1.location_id = l1.location_id
 where p1.location_id is not null and l1.state is not null
 group by l1.state;
 
@@ -3027,11 +3017,11 @@ group by l1.state;
 -- 1102   Number of care sites by location 3-digit zip
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1102 as analysis_id,  
-   left(l1.zip,3) as stratum_1, count(distinct care_site_id) as count_value
+   substr(l1.zip, 1, 3) as stratum_1, count(distinct care_site_id) as count_value
 from care_site cs1
-   inner join LOCATION l1 on cs1.location_id = l1.location_id
+   inner join `LOCATION` l1 on cs1.location_id = l1.location_id
 where cs1.location_id is not null and l1.zip is not null
-group by left(l1.zip,3);
+group by substr(l1.zip, 1, 3);
 
 
 -- 1103   Number of care sites by location state
@@ -3039,7 +3029,7 @@ insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1103 as analysis_id,  
    l1.state as stratum_1, count(distinct care_site_id) as count_value
 from care_site cs1
-   inner join LOCATION l1 on cs1.location_id = l1.location_id
+   inner join `LOCATION` l1 on cs1.location_id = l1.location_id
 where cs1.location_id is not null and l1.state is not null
 group by l1.state;
 
@@ -3051,7 +3041,7 @@ ACHILLES Analyses on CARE_SITE table
 -- 1200   Number of persons by place of service
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1200 as analysis_id,  
-   cs1.place_of_service_concept_id as stratum_1, count(person_id) as count_value
+   cast(cs1.place_of_service_concept_id as string) as stratum_1, count(person_id) as count_value
 from PERSON p1
    inner join care_site cs1 on p1.care_site_id = cs1.care_site_id
 where p1.care_site_id is not null and cs1.place_of_service_concept_id is not null
@@ -3061,7 +3051,7 @@ group by cs1.place_of_service_concept_id;
 -- 1201   Number of visits by place of service
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1201 as analysis_id,  
-   cs1.place_of_service_concept_id as stratum_1, count(visit_occurrence_id) as count_value
+   cast(cs1.place_of_service_concept_id as string) as stratum_1, count(visit_occurrence_id) as count_value
 from visit_occurrence vo1
    inner join care_site cs1 on vo1.care_site_id = cs1.care_site_id
 where vo1.care_site_id is not null and cs1.place_of_service_concept_id is not null
@@ -3071,7 +3061,7 @@ group by cs1.place_of_service_concept_id;
 -- 1202   Number of care sites by place of service
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1202 as analysis_id,  
-   cs1.place_of_service_concept_id as stratum_1, 
+   cast(cs1.place_of_service_concept_id as string) as stratum_1, 
    count(care_site_id) as count_value
 from care_site cs1
 where cs1.place_of_service_concept_id is not null
@@ -3087,23 +3077,23 @@ ACHILLES Analyses on ORGANIZATION table
 --NOT APPLICABLE IN CDMv5
 
 
-/********************************************
+/*********************************************************
 ACHILLES Analyses on PAYOR_PLAN_PERIOD table
-*********************************************/
+**********************************************************/
 
 -- 1406   Length of payer plan (days) of first payer plan period by gender
 insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select p1.gender_concept_id as stratum1_id,
-    DATEDIFF(dd,ppp1.payer_plan_period_start_date, ppp1.payer_plan_period_end_date) as count_value
+    DATEDIFF(cast(ppp1.payer_plan_period_end_date as timestamp), cast(ppp1.payer_plan_period_start_date as timestamp)) as count_value
   from PERSON p1
    inner join 
    (select person_id, 
       payer_plan_period_START_DATE, 
       payer_plan_period_END_DATE, 
       ROW_NUMBER() over (PARTITION by person_id order by payer_plan_period_start_date asc) as rn1
-       from payer_plan_period
+    from payer_plan_period
    ) ppp1
    on p1.PERSON_ID = ppp1.PERSON_ID
    where ppp1.rn1 = 1
@@ -3124,7 +3114,7 @@ status  as
   select stratum1_id, 
      count_value, 
      count(*) as total, 
-      row_number() over (partition by stratum1_id order by count_value) as rn
+     row_number() over (partition by stratum1_id order by count_value) as rn
   from rawData
   group by stratum1_id, count_value
 ),
@@ -3136,12 +3126,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1406 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3157,8 +3147,8 @@ group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_
 insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
-  select floor((year(ppp1.payer_plan_period_START_DATE) - p1.YEAR_OF_BIRTH)/10) as stratum_id,
-    DATEDIFF(dd,ppp1.payer_plan_period_start_date, ppp1.payer_plan_period_end_date) as count_value
+  select floor((year(cast(ppp1.payer_plan_period_START_DATE as timestamp)) - p1.YEAR_OF_BIRTH)/10) as stratum_id,
+    DATEDIFF(cast(ppp1.payer_plan_period_end_date as timestamp), cast(ppp1.payer_plan_period_start_date as timestamp)) as count_value
   from PERSON p1
    inner join 
    (select person_id, 
@@ -3195,12 +3185,12 @@ priorStats as
   group by s.stratum_id, s.count_value, s.total, s.rn
 )
 select 1407 as analysis_id,
-  o.stratum_id,
+  cast(o.stratum_id as string),
   o.total as count_value,
   o.min_value,
   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3215,7 +3205,7 @@ group by o.stratum_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_v
 -- 1408   Number of persons by length of payer plan period, in 30d increments
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1408 as analysis_id,  
-   floor(DATEDIFF(dd, ppp1.payer_plan_period_start_date, ppp1.payer_plan_period_end_date)/30) as stratum_1, 
+   cast(floor(DATEDIFF(cast(ppp1.payer_plan_period_end_date as timestamp), cast(ppp1.payer_plan_period_start_date as timestamp))/30) as string) as stratum_1, 
    count(distinct p1.person_id) as count_value
 from PERSON p1
    inner join 
@@ -3227,71 +3217,52 @@ from PERSON p1
    ) ppp1
    on p1.PERSON_ID = ppp1.PERSON_ID
    where ppp1.rn1 = 1
-group by floor(DATEDIFF(dd, ppp1.payer_plan_period_start_date, ppp1.payer_plan_period_end_date)/30)
+group by floor(DATEDIFF(cast(ppp1.payer_plan_period_end_date as timestamp), cast(ppp1.payer_plan_period_start_date as timestamp))/30)
 ;
 
 
 -- 1409   Number of persons with continuous payer plan in each year
--- Note: using temp table instead of nested query because this gives vastly improved
-
-IF OBJECT_ID('tempdb..#temp_dates', 'U') IS NOT NULL
-   DROP TABLE #temp_dates;
-
-select distinct 
-  YEAR(payer_plan_period_start_date) as obs_year 
-INTO
-  #temp_dates
-from 
-  payer_plan_period
-;
-
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
+with rawData as 
+(
+	select distinct YEAR(cast(payer_plan_period_start_date as timestamp)) as obs_year 
+	from payer_plan_period
+)
 select 1409 as analysis_id,  
-   t1.obs_year as stratum_1, count(distinct p1.PERSON_ID) as count_value
+   cast(t1.obs_year as string) as stratum_1, count(distinct p1.PERSON_ID) as count_value
 from
-   PERSON p1
-   inner join 
-    payer_plan_period ppp1
-   on p1.person_id = ppp1.person_id
-   ,
-   #temp_dates t1 
-where year(ppp1.payer_plan_period_START_DATE) <= t1.obs_year
-   and year(ppp1.payer_plan_period_END_DATE) >= t1.obs_year
+   PERSON p1 inner join payer_plan_period ppp1 on p1.person_id = ppp1.person_id,
+   rawdata t1 
+where year(cast(ppp1.payer_plan_period_START_DATE as timestamp)) <= t1.obs_year
+   and year(cast(ppp1.payer_plan_period_END_DATE as timestamp)) >= t1.obs_year
 group by t1.obs_year
 ;
 
 
-
 -- 1410   Number of persons with continuous payer plan in each month
--- Note: using temp table instead of nested query because this gives vastly improved performance in Oracle
-
-IF OBJECT_ID('tempdb..#temp_dates', 'U') IS NOT NULL
-   DROP TABLE #temp_dates;
-
-SELECT DISTINCT 
-  YEAR(payer_plan_period_start_date)*100 + MONTH(payer_plan_period_start_date) AS obs_month,
-  CAST(CAST(YEAR(payer_plan_period_start_date) AS VARCHAR(4)) +  RIGHT('0' + CAST(MONTH(payer_plan_period_start_date) AS VARCHAR(2)), 2) + '01' AS DATE) AS obs_month_start,  
-  DATEADD(dd,-1,DATEADD(mm,1,CAST(CAST(YEAR(payer_plan_period_start_date) AS VARCHAR(4)) +  RIGHT('0' + CAST(MONTH(payer_plan_period_start_date) AS VARCHAR(2)), 2) + '01' AS DATE))) AS obs_month_end
-INTO
-  #temp_dates
-FROM 
-  payer_plan_period
-;
-
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
+with rawData as
+(
+	SELECT DISTINCT 
+	  YEAR(cast(payer_plan_period_start_date as timestamp))*100 + MONTH(cast(payer_plan_period_start_date as timestamp)) AS obs_month,
+	  CAST(concat_ws('-', cast(YEAR(cast(payer_plan_period_start_date as timestamp)) as string), 
+				lpad(cast(MONTH(cast(payer_plan_period_start_date as timestamp)) as string), 2, '0'), '01') as timestamp) AS obs_month_start,  
+	  days_add(months_add(CAST(concat_ws('-', cast(YEAR(cast(payer_plan_period_start_date as timestamp)) as string), 
+						lpad(cast(MONTH(cast(payer_plan_period_start_date as timestamp)) as string), 2, '0'), '01') as timestamp), 1), -1) AS obs_month_end
+	FROM payer_plan_period
+)
 select 
   1410 as analysis_id, 
-   obs_month as stratum_1, 
+   cast(obs_month as string) as stratum_1, 
    count(distinct p1.PERSON_ID) as count_value
-from
-   PERSON p1
+from PERSON p1
    inner join 
   payer_plan_period ppp1
    on p1.person_id = ppp1.person_id
    ,
-   #temp_dates
-where ppp1.payer_plan_period_START_DATE <= obs_month_start
-   and ppp1.payer_plan_period_END_DATE >= obs_month_end
+   rawdata
+where cast(ppp1.payer_plan_period_START_DATE as timestamp) <= obs_month_start
+   and cast(ppp1.payer_plan_period_END_DATE as timestamp) >= obs_month_end
 group by obs_month
 ;
 
@@ -3299,31 +3270,31 @@ group by obs_month
 -- 1411   Number of persons by payer plan period start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1411 as analysis_id, 
-   cast(cast(YEAR(payer_plan_period_start_date) as varchar(4)) +  RIGHT('0' + CAST(month(payer_plan_period_START_DATE) AS VARCHAR(2)), 2) + '01' as date) as stratum_1,
-    count(distinct p1.PERSON_ID) as count_value
+   concat_ws('-', cast(YEAR(cast(payer_plan_period_start_date as timestamp)) as string), lpad(CAST(month(cast(payer_plan_period_START_DATE as timestamp)) as string), 2, '0'), '01') as stratum_1,
+   count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
    inner join payer_plan_period ppp1
    on p1.person_id = ppp1.person_id
-group by cast(cast(YEAR(payer_plan_period_start_date) as varchar(4)) +  RIGHT('0' + CAST(month(payer_plan_period_START_DATE) AS VARCHAR(2)), 2) + '01' as date)
+group by concat_ws('-', cast(YEAR(cast(payer_plan_period_start_date as timestamp)) as string), lpad(CAST(month(cast(payer_plan_period_START_DATE as timestamp)) as string), 2, '0'), '01') 
 ;
 
 
 -- 1412   Number of persons by payer plan period end month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1412 as analysis_id,  
-   cast(cast(YEAR(payer_plan_period_end_date) as varchar(4)) +  RIGHT('0' + CAST(month(payer_plan_period_end_DATE) AS VARCHAR(2)), 2) + '01' as date) as stratum_1, 
+   concat_ws('-', cast(YEAR(cast(payer_plan_period_end_date as timestamp)) as string), lpad(cast(month(cast(payer_plan_period_end_DATE as timestamp)) as string), 2, '0'), '01' ) as stratum_1, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
    inner join payer_plan_period ppp1
    on p1.person_id = ppp1.person_id
-group by cast(cast(YEAR(payer_plan_period_end_date) as varchar(4)) +  RIGHT('0' + CAST(month(payer_plan_period_end_DATE) AS VARCHAR(2)), 2) + '01' as date)
+group by concat_ws('-', cast(YEAR(cast(payer_plan_period_end_date as timestamp)) as string), lpad(cast(month(cast(payer_plan_period_end_DATE as timestamp)) as string), 2, '0'), '01')
 ;
 
 
 -- 1413   Number of persons by number of payer plan periods
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1413 as analysis_id,  
-   ppp1.num_periods as stratum_1, 
+   cast(ppp1.num_periods as string) as stratum_1, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
    inner join (select person_id, count(payer_plan_period_start_date) as num_periods from payer_plan_period group by PERSON_ID) ppp1
@@ -3337,7 +3308,7 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 1414 as analysis_id,  
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
-   inner join (select person_id,min(year(payer_plan_period_start_date)) as first_obs_year from payer_plan_period group by PERSON_ID) ppp1
+   inner join (select person_id, min(year(cast(payer_plan_period_start_date as timestamp))) as first_obs_year from payer_plan_period group by PERSON_ID) ppp1
    on p1.person_id = ppp1.person_id
 where p1.year_of_birth > ppp1.first_obs_year
 ;
@@ -3349,7 +3320,7 @@ select 1415 as analysis_id,
    count(ppp1.PERSON_ID) as count_value
 from
    payer_plan_period ppp1
-where ppp1.payer_plan_period_end_date < ppp1.payer_plan_period_start_date
+where cast(ppp1.payer_plan_period_end_date as timestamp) < cast(ppp1.payer_plan_period_start_date as timestamp)
 ;
 
 
@@ -3361,9 +3332,7 @@ where ppp1.payer_plan_period_end_date < ppp1.payer_plan_period_start_date
 
 -- { 1502 in (@list_of_analysis_ids) | 1503 in (@list_of_analysis_ids) | 1504 in (@list_of_analysis_ids) | 1505 in (@list_of_analysis_ids) | 1506 in (@list_of_analysis_ids) | 1507 in (@list_of_analysis_ids) | 1508 in (@list_of_analysis_ids) | 1509 in (@list_of_analysis_ids) | 1510 in (@list_of_analysis_ids) | 1511 in (@list_of_analysis_ids)}?{
 
-IF OBJECT_ID('ACHILLES_drug_cost_raw', 'U') IS NOT NULL
-  DROP TABLE ACHILLES_drug_cost_raw;
-
+create table ACHILLES_drug_cost_raw as
 select drug_concept_id as subject_id,
   paid_copay,
    paid_coinsurance,
@@ -3404,6 +3373,7 @@ where dc1.payer_plan_period_id is not null
 
 
 -- 1502   Distribution of paid copay, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3426,7 +3396,7 @@ status  as
 (
   select stratum1_id, 
       count_value, 
-     count(*) as total, 
+      count(*) as total, 
       row_number() over (partition by stratum1_id order by count_value) as rn
   from rawData
   group by stratum1_id, count_value
@@ -3439,12 +3409,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1502 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3455,13 +3425,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1503   Distribution of paid coinsurance, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3497,12 +3463,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1503 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3513,13 +3479,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1504   Distribution of paid toward deductible, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3555,12 +3517,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1504 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3571,13 +3533,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1505   Distribution of paid by payer, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3600,8 +3558,8 @@ status  as
 (
   select stratum1_id, 
     count_value, 
-     count(*) as total, 
-      row_number() over (partition by stratum1_id order by count_value) as rn
+    count(*) as total, 
+    row_number() over (partition by stratum1_id order by count_value) as rn
   from rawData
   group by stratum1_id, count_value
 ),
@@ -3613,12 +3571,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1505 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3627,11 +3585,6 @@ select 1505 as analysis_id,
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
 ;
 
 
@@ -3672,12 +3625,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1506 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3714,7 +3667,7 @@ status  as
   select stratum1_id, 
     count_value, 
     count(*) as total, 
-     row_number() over (partition by stratum1_id order by count_value) as rn
+    row_number() over (partition by stratum1_id order by count_value) as rn
   from rawData
   group by stratum1_id, count_value
 ),
@@ -3726,12 +3679,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1507 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3780,12 +3733,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1508 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3798,6 +3751,7 @@ group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_
 
 
 -- 1509   Distribution of ingredient_cost, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3833,12 +3787,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1509 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3849,13 +3803,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1510   Distribution of dispensing fee, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3891,12 +3841,12 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1510 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -3907,13 +3857,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1511   Distribution of average wholesale price, by drug_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -3949,7 +3895,7 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1511 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -3965,15 +3911,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
 
+DROP TABLE ACHILLES_drug_cost_raw;
 
--- clean up cached table if exists
-IF OBJECT_ID('ACHILLES_drug_cost_raw', 'U') IS NOT NULL
-  DROP TABLE ACHILLES_drug_cost_raw;
 
 /********************************************
    ACHILLES Analyses on PROCEDURE_COST table
@@ -3981,9 +3921,7 @@ IF OBJECT_ID('ACHILLES_drug_cost_raw', 'U') IS NOT NULL
 
 -- { 1602 in (@list_of_analysis_ids) | 1603 in (@list_of_analysis_ids) | 1604 in (@list_of_analysis_ids) | 1605 in (@list_of_analysis_ids) | 1606 in (@list_of_analysis_ids) | 1607 in (@list_of_analysis_ids) | 1608 in (@list_of_analysis_ids)}?{
 
-IF OBJECT_ID('ACHILLES_procedure_cost_raw', 'U') IS NOT NULL
-  DROP TABLE ACHILLES_procedure_cost_raw;
-
+CREATE TABLE ACHILLES_procedure_cost_raw as
 select procedure_concept_id as subject_id,
   paid_copay,
   paid_coinsurance,
@@ -3995,6 +3933,7 @@ select procedure_concept_id as subject_id,
 from procedure_cost pc1
 join procedure_occurrence po1 on pc1.procedure_occurrence_id = po1.procedure_occurrence_id and procedure_concept_id <> 0
 ;
+
 
 -- 1600   Number of procedure cost records with invalid procedure exposure id
 insert into ACHILLES_results (analysis_id, count_value)
@@ -4022,6 +3961,7 @@ where pc1.payer_plan_period_id is not null
 
 
 -- 1602   Distribution of paid copay, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4057,13 +3997,13 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1602 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
   cast(o.stdev_value as float),
- min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
   min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
@@ -4073,13 +4013,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1603   Distribution of paid coinsurance, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4115,14 +4051,14 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1603 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
   cast(o.stdev_value as float),
- min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
- min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
   min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
   min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
@@ -4131,14 +4067,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
-
 
 -- 1604   Distribution of paid toward deductible, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4174,15 +4105,15 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1604 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
   cast(o.stdev_value as float),
- min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
- min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
- min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
   min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
   min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
 from priorStats p
@@ -4190,13 +4121,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1605   Distribution of paid by payer, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4232,30 +4159,25 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1605 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
   cast(o.stdev_value as float),
- min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
- min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
- min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
- min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
+  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
   min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
-
 
 -- 1606   Distribution of paid by coordination of benefit, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4291,30 +4213,25 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1606 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
   cast(o.avg_value as float),
   cast(o.stdev_value as float),
- min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
- min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
- min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
- min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
- min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
+  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
+  min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
 from priorStats p
 join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
-
 
 -- 1607   Distribution of total out-of-pocket, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4350,7 +4267,7 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1607 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -4366,13 +4283,9 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1608   Distribution of total paid, by procedure_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select subject_id as stratum1_id,
@@ -4408,7 +4321,7 @@ priorStats as
   group by s.stratum1_id, s.count_value, s.total, s.rn
 )
 select 1608 as analysis_id,
-  p.stratum1_id as stratum_1,
+  cast(p.stratum1_id as string) as stratum_1,
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -4424,22 +4337,16 @@ join overallStats o on p.stratum1_id = o.stratum1_id
 group by p.stratum1_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum_1, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1609   Number of records by disease_class_concept_id
 
 --not applicable for OMOP CDMv5
 
 
-
 -- 1610   Number of records by revenue_code_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1610 as analysis_id, 
-   revenue_code_concept_id as stratum_1, 
+   cast(revenue_code_concept_id as string) as stratum_1, 
    count(pc1.procedure_cost_ID) as count_value
 from procedure_cost pc1
 where revenue_code_concept_id is not null
@@ -4447,8 +4354,7 @@ group by revenue_code_concept_id
 ;
 
 -- clean up cached table if exists
-IF OBJECT_ID('ACHILLES_procedure_cost_raw', 'U') IS NOT NULL
-  DROP TABLE ACHILLES_procedure_cost_raw;
+DROP TABLE ACHILLES_procedure_cost_raw;
 
 
 /********************************************
@@ -4458,7 +4364,7 @@ IF OBJECT_ID('ACHILLES_procedure_cost_raw', 'U') IS NOT NULL
 -- 1700   Number of records by cohort_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1700 as analysis_id, 
-   cohort_definition_id as stratum_1, 
+   cast(cohort_definition_id as string) as stratum_1, 
    count(subject_ID) as count_value
 from cohort c1
 group by cohort_definition_id
@@ -4470,7 +4376,7 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 1701 as analysis_id, 
    count(subject_ID) as count_value
 from cohort c1
-where c1.cohort_end_date < c1.cohort_start_date
+where cast(c1.cohort_end_date  as timestamp) < cast(c1.cohort_start_date as timestamp)
 ;
 
 
@@ -4481,7 +4387,7 @@ where c1.cohort_end_date < c1.cohort_start_date
 -- 1800   Number of persons with at least one measurement occurrence, by measurement_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1800 as analysis_id, 
-   m.measurement_CONCEPT_ID as stratum_1,
+   cast(m.measurement_CONCEPT_ID as string) as stratum_1,
    count(distinct m.PERSON_ID) as count_value
 from measurement m
 group by m.measurement_CONCEPT_ID
@@ -4491,7 +4397,7 @@ group by m.measurement_CONCEPT_ID
 -- 1801   Number of measurement occurrence records, by measurement_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1801 as analysis_id, 
-   m.measurement_concept_id as stratum_1,
+   cast(m.measurement_concept_id as string) as stratum_1,
    count(m.PERSON_ID) as count_value
 from measurement m
 group by m.measurement_CONCEPT_ID
@@ -4501,16 +4407,17 @@ group by m.measurement_CONCEPT_ID
 -- 1802   Number of persons by measurement occurrence start month, by measurement_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 1802 as analysis_id,   
-   m.measurement_concept_id as stratum_1,
-   YEAR(measurement_date)*100 + month(measurement_date) as stratum_2, 
+   cast(m.measurement_concept_id as string) as stratum_1,
+   cast(YEAR(cast(measurement_date as timestamp))*100 + month(cast(measurement_date as timestamp)) as string) as stratum_2, 
    count(distinct PERSON_ID) as count_value
 from measurement m
 group by m.measurement_concept_id, 
-   YEAR(measurement_date)*100 + month(measurement_date)
+   YEAR(cast(measurement_date as timestamp))*100 + month(cast(measurement_date as timestamp))
 ;
 
 
 -- 1803   Number of distinct measurement occurrence concepts per person
+insert into ACHILLES_results_dist (analysis_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
 with rawData as
 (
   select num_measurements as count_value
@@ -4534,7 +4441,7 @@ overallStats as
 status  as
 (
   select count_value, 
-     count(*) as total, 
+      count(*) as total, 
       row_number() over (order by count_value) as rn
   from rawData
   group by count_value
@@ -4549,9 +4456,9 @@ priorStats as
 select 1803 as analysis_id,
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -4562,34 +4469,29 @@ cross join overallStats o
 group by o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1804   Number of persons with at least one measurement occurrence, by measurement_concept_id by calendar year by gender by age decile
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, stratum_3, stratum_4, count_value)
 select 1804 as analysis_id,   
-   m.measurement_concept_id as stratum_1,
-   YEAR(measurement_date) as stratum_2,
-   p1.gender_concept_id as stratum_3,
-   floor((year(measurement_date) - p1.year_of_birth)/10) as stratum_4, 
+   cast(m.measurement_concept_id as string) as stratum_1,
+   cast(YEAR(cast(measurement_date as timestamp)) as string) as stratum_2,
+   cast(p1.gender_concept_id as string) as stratum_3,
+   cast(floor((year(cast(measurement_date as timestamp)) - p1.year_of_birth)/10) as string) as stratum_4, 
    count(distinct p1.PERSON_ID) as count_value
 from PERSON p1
 inner join measurement m on p1.person_id = m.person_id
 group by m.measurement_concept_id, 
-   YEAR(measurement_date),
+   YEAR(cast(measurement_date as timestamp)),
    p1.gender_concept_id,
-   floor((year(measurement_date) - p1.year_of_birth)/10)
+   floor((year(cast(measurement_date as timestamp)) - p1.year_of_birth)/10)
 ;
 
 
 -- 1805   Number of measurement records, by measurement_concept_id by measurement_type_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 1805 as analysis_id, 
-   m.measurement_concept_id as stratum_1,
-   m.measurement_type_concept_id as stratum_2,
+   cast(m.measurement_concept_id as string) as stratum_1,
+   cast(m.measurement_type_concept_id as string) as stratum_2,
    count(m.PERSON_ID) as count_value
 from measurement m
 group by m.measurement_concept_id,   
@@ -4598,20 +4500,22 @@ group by m.measurement_concept_id,
 
 
 -- 1806   Distribution of age by measurement_concept_id
-select o1.measurement_concept_id as subject_id,
-  p1.gender_concept_id,
-   o1.measurement_start_year - p1.year_of_birth as count_value
-from PERSON p1
-inner join
-(
-   select person_id, measurement_concept_id, min(year(measurement_date)) as measurement_start_year
-   from measurement
-   group by person_id, measurement_concept_id
-) o1
-on p1.person_id = o1.person_id
-;
-
-with overallStats as
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as
+	(
+	select o1.measurement_concept_id as subject_id,
+	  p1.gender_concept_id,
+	   o1.measurement_start_year - p1.year_of_birth as count_value
+	from PERSON p1
+	inner join
+	(
+	   select person_id, measurement_concept_id, min(year(cast(measurement_date as timestamp))) as measurement_start_year
+	   from measurement
+	   group by person_id, measurement_concept_id
+	) o1
+	on p1.person_id = o1.person_id
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     gender_concept_id as stratum2_id,
@@ -4620,13 +4524,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_1806
+  from rawData
    group by subject_id, gender_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, gender_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, gender_concept_id order by count_value) as rn
-  from #rawData_1806
+  from rawData
   group by subject_id, gender_concept_id, count_value
 ),
 priorStats as
@@ -4637,13 +4541,13 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 1806 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
   min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
   min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
   min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
@@ -4654,22 +4558,16 @@ join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.strat
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
 
 -- 1807   Number of measurement occurrence records, by measurement_concept_id and unit_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, count_value)
 select 1807 as analysis_id, 
-   m.measurement_concept_id as stratum_1,
-   m.unit_concept_id as stratum_2,
+   cast(m.measurement_concept_id as string) as stratum_1,
+   cast(m.unit_concept_id as string) as stratum_2,
    count(m.PERSON_ID) as count_value
 from measurement m
 group by m.measurement_concept_id, m.unit_concept_id
 ;
-
 
 
 -- 1809   Number of measurement records with invalid person_id
@@ -4687,9 +4585,9 @@ insert into ACHILLES_results (analysis_id, count_value)
 select 1810 as analysis_id,  
    count(m.PERSON_ID) as count_value
 from measurement m
-   left join observation_period_raw op on op.person_id = m.person_id
-   and m.measurement_date >= op.observation_period_start_date
-   and m.measurement_date <= op.observation_period_end_date
+   left join observation_period op on op.person_id = m.person_id
+   and cast(m.measurement_date as timestamp) >= cast(op.observation_period_start_date as timestamp)
+   and cast(m.measurement_date as timestamp) <= cast(op.observation_period_end_date as timestamp)
 where op.person_id is null
 ;
 
@@ -4726,14 +4624,15 @@ where m.value_as_number is null
 
 
 -- 1815  Distribution of numeric values, by measurement_concept_id and unit_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as(
 select measurement_concept_id as subject_id, 
    unit_concept_id,
    value_as_number as count_value
 from measurement m
 where m.unit_concept_id is not null and m.value_as_number is not null
-;
-
-with overallStats as
+),
+overallStats as
 (
   select subject_id as stratum1_id,
     unit_concept_id as stratum2_id,
@@ -4742,13 +4641,13 @@ with overallStats as
     min(count_value) as min_value,
     max(count_value) as max_value,
     count(*) as total
-  from #rawData_1815
+  from rawData
    group by subject_id, unit_concept_id
 ),
 status  as
 (
   select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
-  from #rawData_1815
+  from rawData
   group by subject_id, unit_concept_id, count_value
 ),
 priorStats as
@@ -4759,128 +4658,8 @@ priorStats as
   group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
 )
 select 1815 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
-  o.total as count_value,
-  o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
-  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
-  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
-  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
-  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
-  min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
-from priorStats p
-join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
-group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
-
--- 1816   Distribution of low range, by measurement_concept_id and unit_concept_id
-select measurement_concept_id as subject_id, 
-   unit_concept_id,
-   range_low as count_value
-from measurement m
-where m.unit_concept_id is not null
-   and m.value_as_number is not null
-   and m.range_low is not null
-   and m.range_high is not null
-;
-
-with overallStats as
-(
-  select subject_id as stratum1_id,
-    unit_concept_id as stratum2_id,
-    avg(1.0 * count_value) as avg_value,
-    stddev(count_value) as stdev_value,
-    min(count_value) as min_value,
-    max(count_value) as max_value,
-    count(*) as total
-  from #rawData_1816
-   group by subject_id, unit_concept_id
-),
-status  as
-(
-  select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
-  from #rawData_1816
-  group by subject_id, unit_concept_id, count_value
-),
-priorStats as
-(
-  select s.stratum1_id, s.stratum2_id, s.count_value, s.total, sum(p.total) as accumulated
-  from status  s
-  join status  p on s.stratum1_id = p.stratum1_id and s.stratum2_id = p.stratum2_id and p.rn <= s.rn
-  group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
-)
-select 1816 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
-  o.total as count_value,
-  o.min_value,
-   o.max_value,
-   cast(o.avg_value as float),
-   cast(o.stdev_value as float),
-  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
-  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
-  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
-  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
-  min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
-from priorStats p
-join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
-group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
-;
-
-insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
-;
-
-
--- 1817   Distribution of high range, by observation_concept_id and unit_concept_id
-select measurement_concept_id as subject_id, 
-   unit_concept_id,
-   range_high as count_value
-from measurement m
-where m.unit_concept_id is not null
-   and m.value_as_number is not null
-   and m.range_low is not null
-   and m.range_high is not null
-;
-
-with overallStats as
-(
-  select subject_id as stratum1_id,
-    unit_concept_id as stratum2_id,
-    avg(1.0 * count_value) as avg_value,
-    stddev(count_value) as stdev_value,
-    min(count_value) as min_value,
-    max(count_value) as max_value,
-    count(*) as total
-  from #rawData_1817
-   group by subject_id, unit_concept_id
-),
-status  as
-(
-  select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
-  from #rawData_1817
-  group by subject_id, unit_concept_id, count_value
-),
-priorStats as
-(
-  select s.stratum1_id, s.stratum2_id, s.count_value, s.total, sum(p.total) as accumulated
-  from status  s
-  join status  p on s.stratum1_id = p.stratum1_id and s.stratum2_id = p.stratum2_id and p.rn <= s.rn
-  group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
-)
-select 1817 as analysis_id,
-  o.stratum1_id,
-  o.stratum2_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
   o.total as count_value,
   o.min_value,
   o.max_value,
@@ -4896,17 +4675,126 @@ join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.strat
 group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
+
+-- 1816   Distribution of low range, by measurement_concept_id and unit_concept_id
 insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
-select analysis_id, stratum1_id, stratum2_id, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value
-from #tempResults
+with rawData as
+(
+	select measurement_concept_id as subject_id, 
+	   unit_concept_id,
+	   range_low as count_value
+	from measurement m
+	where m.unit_concept_id is not null
+	   and m.value_as_number is not null
+	   and m.range_low is not null
+	   and m.range_high is not null
+),
+overallStats as
+(
+  select subject_id as stratum1_id,
+    unit_concept_id as stratum2_id,
+    avg(1.0 * count_value) as avg_value,
+    stddev(count_value) as stdev_value,
+    min(count_value) as min_value,
+    max(count_value) as max_value,
+    count(*) as total
+  from rawData
+   group by subject_id, unit_concept_id
+),
+status  as
+(
+  select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
+  from rawData
+  group by subject_id, unit_concept_id, count_value
+),
+priorStats as
+(
+  select s.stratum1_id, s.stratum2_id, s.count_value, s.total, sum(p.total) as accumulated
+  from status  s
+  join status  p on s.stratum1_id = p.stratum1_id and s.stratum2_id = p.stratum2_id and p.rn <= s.rn
+  group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
+)
+select 1816 as analysis_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
+  o.total as count_value,
+  o.min_value,
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
+  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
+  min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
+from priorStats p
+join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
+group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
+;
+
+
+-- 1817   Distribution of high range, by observation_concept_id and unit_concept_id
+insert into ACHILLES_results_dist (analysis_id, stratum_1, stratum_2, count_value, min_value, max_value, avg_value, stdev_value, median_value, p10_value, p25_value, p75_value, p90_value)
+with rawData as
+	(
+	select measurement_concept_id as subject_id, 
+	   unit_concept_id,
+	   range_high as count_value
+	from measurement m
+	where m.unit_concept_id is not null
+	   and m.value_as_number is not null
+	   and m.range_low is not null
+	   and m.range_high is not null
+),
+overallStats as
+(
+  select subject_id as stratum1_id,
+    unit_concept_id as stratum2_id,
+    avg(1.0 * count_value) as avg_value,
+    stddev(count_value) as stdev_value,
+    min(count_value) as min_value,
+    max(count_value) as max_value,
+    count(*) as total
+  from rawData
+   group by subject_id, unit_concept_id
+),
+status  as
+(
+  select subject_id as stratum1_id, unit_concept_id as stratum2_id, count_value, count(*) as total, row_number() over (partition by subject_id, unit_concept_id order by count_value) as rn
+  from rawData
+  group by subject_id, unit_concept_id, count_value
+),
+priorStats as
+(
+  select s.stratum1_id, s.stratum2_id, s.count_value, s.total, sum(p.total) as accumulated
+  from status  s
+  join status  p on s.stratum1_id = p.stratum1_id and s.stratum2_id = p.stratum2_id and p.rn <= s.rn
+  group by s.stratum1_id, s.stratum2_id, s.count_value, s.total, s.rn
+)
+select 1817 as analysis_id,
+  cast(o.stratum1_id as string),
+  cast(o.stratum2_id as string),
+  o.total as count_value,
+  o.min_value,
+  o.max_value,
+  cast(o.avg_value as float),
+  cast(o.stdev_value as float),
+  min(case when p.accumulated >= .50 * o.total then count_value else o.max_value end) as median_value,
+  min(case when p.accumulated >= .10 * o.total then count_value else o.max_value end) as p10_value,
+  min(case when p.accumulated >= .25 * o.total then count_value else o.max_value end) as p25_value,
+  min(case when p.accumulated >= .75 * o.total then count_value else o.max_value end) as p75_value,
+  min(case when p.accumulated >= .90 * o.total then count_value else o.max_value end) as p90_value
+from priorStats p
+join overallStats o on p.stratum1_id = o.stratum1_id and p.stratum2_id = o.stratum2_id 
+group by o.stratum1_id, o.stratum2_id, o.total, o.min_value, o.max_value, o.avg_value, o.stdev_value
 ;
 
 
 -- 1818   Number of observation records below/within/above normal range, by observation_concept_id and unit_concept_id
 insert into ACHILLES_results (analysis_id, stratum_1, stratum_2, stratum_3, count_value)
 select 1818 as analysis_id,  
-   m.measurement_concept_id as stratum_1,
-   m.unit_concept_id as stratum_2,
+   cast(m.measurement_concept_id as string) as stratum_1,
+   cast(m.unit_concept_id as string) as stratum_2,
    case when m.value_as_number < m.range_low then 'Below Range Low'
       when m.value_as_number >= m.range_low and m.value_as_number <= m.range_high then 'Within Range'
       when m.value_as_number > m.range_high then 'Above Range High'
@@ -4929,10 +4817,10 @@ group by measurement_concept_id,
 -- 1820   Number of observation records by condition occurrence start month
 insert into ACHILLES_results (analysis_id, stratum_1, count_value)
 select 1820 as analysis_id,   
-   YEAR(measurement_date)*100 + month(measurement_date) as stratum_1, 
+   cast(YEAR(cast(measurement_date as timestamp))*100 + month(cast(measurement_date as timestamp)) as string) as stratum_1, 
    count(PERSON_ID) as count_value
 from measurement m
-group by YEAR(measurement_date)*100 + month(measurement_date)
+group by YEAR(cast(measurement_date as timestamp))*100 + month(cast(measurement_date as timestamp))
 ;
 
 
