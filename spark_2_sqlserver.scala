@@ -35,3 +35,6 @@ val domainDF  = hc.createDataFrame(rowRDD, createSchema())
 //domainDF.createJDBCTable(url, "domain", true)
 
 domainDF.insertIntoJDBC(url, "domain", false)
+
+domainDF.map(x => Row(x.get(1).toString)).collect().foreach(println)
+
